@@ -441,6 +441,16 @@ def process_excel(excel_path: str) -> Dict[str, Any]:
     }
 
 
+def main(input_data: Dict[str, Any] = None) -> Dict[str, Any]:
+    """SKILL 入口点"""
+    if input_data is None:
+        input_data = {}
+    excel_path = input_data.get('file_path', '')
+    if not excel_path:
+        return {"success": False, "error": "Excel file path is required"}
+    return process_excel(excel_path)
+
+
 if __name__ == "__main__":
     # 测试代码
     if len(sys.argv) > 1:
