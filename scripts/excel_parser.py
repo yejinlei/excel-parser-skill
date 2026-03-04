@@ -34,6 +34,9 @@ class ExcelParser:
         """初始化Excel解析器"""
         self.calamine = None
         self._init_engine()
+        # 加载环境变量配置
+        self.max_rows = int(os.getenv('EXCEL_MAX_ROWS', 100))
+        self.keep_empty_rows = os.getenv('EXCEL_KEEP_EMPTY_ROWS', 'false').lower() == 'true'
     
     def _init_engine(self):
         """初始化解析引擎"""
@@ -82,7 +85,8 @@ class ExcelParser:
                     "name": sheet_name,
                     "rows": [],
                     "row_count": 0,
-                    "column_count": 0
+                    "column_count": 0,
+                    "merged_cells": []
                 }
                 
                 # 获取工作表数据
@@ -183,12 +187,26 @@ class ExcelParser:
                             "name": sheet_name,
                             "rows": [],
                             "row_count": 0,
-                            "column_count": 0
+                            "column_count": 0,
+                            "merged_cells": []
                         }
                         
                         # 获取工作表数据
                         sheet = workbook.sheet_by_name(sheet_name)
                         rows = []
+                        
+                        # 处理合并单元格
+                        merged_cells = []
+                        if hasattr(sheet, 'merged_cells'):
+                            for crange in sheet.merged_cells:
+                                rlo, rhi, clo, chi = crange
+                                merged_cells.append({
+                                    "start_row": rlo,
+                                    "end_row": rhi - 1,
+                                    "start_col": clo,
+                                    "end_col": chi - 1
+                                })
+                        sheet_data["merged_cells"] = merged_cells
                         
                         for row_idx in range(sheet.nrows):
                             row = sheet.row_values(row_idx)
@@ -233,12 +251,26 @@ class ExcelParser:
                                 "name": sheet_name,
                                 "rows": [],
                                 "row_count": 0,
-                                "column_count": 0
+                                "column_count": 0,
+                                "merged_cells": []
                             }
                             
                             # 获取工作表数据
                             sheet = workbook.sheet_by_name(sheet_name)
                             rows = []
+                            
+                            # 处理合并单元格
+                            merged_cells = []
+                            if hasattr(sheet, 'merged_cells'):
+                                for crange in sheet.merged_cells:
+                                    rlo, rhi, clo, chi = crange
+                                    merged_cells.append({
+                                        "start_row": rlo,
+                                        "end_row": rhi - 1,
+                                        "start_col": clo,
+                                        "end_col": chi - 1
+                                    })
+                            sheet_data["merged_cells"] = merged_cells
                             
                             for row_idx in range(sheet.nrows):
                                 row = sheet.row_values(row_idx)
@@ -284,12 +316,24 @@ class ExcelParser:
                             "name": sheet_name,
                             "rows": [],
                             "row_count": 0,
-                            "column_count": 0
+                            "column_count": 0,
+                            "merged_cells": []
                         }
                         
                         # 获取工作表数据
                         ws = wb[sheet_name]
                         rows = []
+                        
+                        # 处理合并单元格
+                        merged_cells = []
+                        for merged_cell in ws.merged_cells.ranges:
+                            merged_cells.append({
+                                "start_row": merged_cell.min_row - 1,  # 转换为0索引
+                                "end_row": merged_cell.max_row - 1,
+                                "start_col": merged_cell.min_col - 1,
+                                "end_col": merged_cell.max_col - 1
+                            })
+                        sheet_data["merged_cells"] = merged_cells
                         
                         for row in ws.iter_rows(values_only=True):
                             # 处理行数据
@@ -333,12 +377,24 @@ class ExcelParser:
                                 "name": sheet_name,
                                 "rows": [],
                                 "row_count": 0,
-                                "column_count": 0
+                                "column_count": 0,
+                                "merged_cells": []
                             }
                             
                             # 获取工作表数据
                             ws = wb[sheet_name]
                             rows = []
+                            
+                            # 处理合并单元格
+                            merged_cells = []
+                            for merged_cell in ws.merged_cells.ranges:
+                                merged_cells.append({
+                                    "start_row": merged_cell.min_row - 1,  # 转换为0索引
+                                    "end_row": merged_cell.max_row - 1,
+                                    "start_col": merged_cell.min_col - 1,
+                                    "end_col": merged_cell.max_col - 1
+                                })
+                            sheet_data["merged_cells"] = merged_cells
                             
                             for row in ws.iter_rows(values_only=True):
                                 # 处理行数据
@@ -396,19 +452,21 @@ class ExcelParser:
             for sheet in result['sheets']:
                 text_parts.append(f"--- 工作表: {sheet['name']} ---")
                 text_parts.append(f"行数: {sheet['row_count']}, 列数: {sheet['column_count']}")
+                if 'merged_cells' in sheet and sheet['merged_cells']:
+                    text_parts.append(f"合并单元格数量: {len(sheet['merged_cells'])}")
                 text_parts.append("")
                 
-                # 输出前100行数据
-                max_rows = min(sheet['row_count'], 100)
+                # 输出数据，使用配置的最大行数限制
+                max_rows = min(sheet['row_count'], self.max_rows)
                 for i, row in enumerate(sheet['rows'][:max_rows]):
-                    # 过滤空行
-                    if any(cell.strip() for cell in row):
+                    # 根据配置决定是否保留空行
+                    if self.keep_empty_rows or any(cell.strip() for cell in row):
                         row_text = "\t".join(row)
                         text_parts.append(f"{i+1}: {row_text}")
                 
                 # 如果有更多行，提示
-                if sheet['row_count'] > 100:
-                    text_parts.append(f"... 还有 {sheet['row_count'] - 100} 行未显示")
+                if sheet['row_count'] > self.max_rows:
+                    text_parts.append(f"... 还有 {sheet['row_count'] - self.max_rows} 行未显示")
                 
                 text_parts.append("")
             
@@ -416,6 +474,157 @@ class ExcelParser:
             
         except Exception as e:
             return f"【Excel文件处理失败: {str(e)}】"
+    
+    def write_excel(self, output_path: str, data: Dict[str, Any]) -> bool:
+        """
+        写入Excel文件
+        
+        Args:
+            output_path: 输出文件路径
+            data: 要写入的数据，格式如下：
+                {
+                    "sheets": [
+                        {
+                            "name": "Sheet1",
+                            "rows": [["A1", "B1"], ["A2", "B2"]],
+                            "merged_cells": [
+                                {
+                                    "start_row": 0,
+                                    "end_row": 0,
+                                    "start_col": 0,
+                                    "end_col": 1
+                                }
+                            ]
+                        }
+                    ]
+                }
+        
+        Returns:
+            是否写入成功
+        """
+        try:
+            from openpyxl import Workbook
+            from openpyxl.utils import get_column_letter
+            
+            # 创建工作簿
+            wb = Workbook()
+            
+            # 获取默认工作表
+            default_sheet = wb.active
+            
+            # 处理数据
+            sheets_data = data.get('sheets', [])
+            
+            if not sheets_data:
+                # 如果没有提供数据，创建一个默认工作表
+                default_sheet.title = "Sheet1"
+            else:
+                # 删除默认工作表
+                wb.remove(default_sheet)
+                
+                # 创建新工作表
+                for sheet_data in sheets_data:
+                    sheet_name = sheet_data.get('name', 'Sheet')
+                    rows = sheet_data.get('rows', [])
+                    merged_cells = sheet_data.get('merged_cells', [])
+                    
+                    # 创建工作表
+                    ws = wb.create_sheet(title=sheet_name)
+                    
+                    # 写入数据
+                    for row_idx, row in enumerate(rows, 1):  # 行号从1开始
+                        for col_idx, cell_value in enumerate(row, 1):  # 列号从1开始
+                            ws.cell(row=row_idx, column=col_idx, value=cell_value)
+                    
+                    # 处理合并单元格
+                    for merged_cell in merged_cells:
+                        start_row = merged_cell.get('start_row', 0) + 1  # 转换为1索引
+                        end_row = merged_cell.get('end_row', 0) + 1
+                        start_col = merged_cell.get('start_col', 0) + 1
+                        end_col = merged_cell.get('end_col', 0) + 1
+                        
+                        if start_row <= end_row and start_col <= end_col:
+                            start_cell = f"{get_column_letter(start_col)}{start_row}"
+                            end_cell = f"{get_column_letter(end_col)}{end_row}"
+                            ws.merge_cells(f"{start_cell}:{end_cell}")
+            
+            # 保存文件
+            wb.save(output_path)
+            wb.close()
+            
+            return True
+            
+        except Exception as e:
+            print(f"写入Excel文件失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def update_excel(self, excel_path: str, data: Dict[str, Any]) -> bool:
+        """
+        更新现有Excel文件
+        
+        Args:
+            excel_path: 现有Excel文件路径
+            data: 要更新的数据，格式同write_excel
+        
+        Returns:
+            是否更新成功
+        """
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.utils import get_column_letter
+            
+            # 加载现有工作簿
+            wb = load_workbook(excel_path)
+            
+            # 处理数据
+            sheets_data = data.get('sheets', [])
+            
+            for sheet_data in sheets_data:
+                sheet_name = sheet_data.get('name')
+                rows = sheet_data.get('rows', [])
+                merged_cells = sheet_data.get('merged_cells', [])
+                
+                if sheet_name:
+                    # 检查工作表是否存在
+                    if sheet_name in wb.sheetnames:
+                        ws = wb[sheet_name]
+                    else:
+                        # 创建新工作表
+                        ws = wb.create_sheet(title=sheet_name)
+                    
+                    # 清空现有数据（可选）
+                    # ws.delete_rows(1, ws.max_row)
+                    
+                    # 写入数据
+                    for row_idx, row in enumerate(rows, 1):  # 行号从1开始
+                        for col_idx, cell_value in enumerate(row, 1):  # 列号从1开始
+                            ws.cell(row=row_idx, column=col_idx, value=cell_value)
+                    
+                    # 处理合并单元格
+                    for merged_cell in merged_cells:
+                        start_row = merged_cell.get('start_row', 0) + 1  # 转换为1索引
+                        end_row = merged_cell.get('end_row', 0) + 1
+                        start_col = merged_cell.get('start_col', 0) + 1
+                        end_col = merged_cell.get('end_col', 0) + 1
+                        
+                        if start_row <= end_row and start_col <= end_col:
+                            start_cell = f"{get_column_letter(start_col)}{start_row}"
+                            end_cell = f"{get_column_letter(end_col)}{end_row}"
+                            ws.merge_cells(f"{start_cell}:{end_cell}")
+            
+            # 保存文件
+            wb.save(excel_path)
+            wb.close()
+            
+            return True
+            
+        except Exception as e:
+            print(f"更新Excel文件失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
 
 def process_excel(excel_path: str) -> Dict[str, Any]:
@@ -441,35 +650,232 @@ def process_excel(excel_path: str) -> Dict[str, Any]:
     }
 
 
+def write_excel_file(output_path: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    写入Excel文件的主函数
+    
+    Args:
+        output_path: 输出文件路径
+        data: 要写入的数据
+    
+    Returns:
+        包含success和message的字典
+    """
+    parser = ExcelParser()
+    success = parser.write_excel(output_path, data)
+    
+    if success:
+        return {
+            "success": True,
+            "message": f"Excel文件已成功写入: {output_path}",
+            "file_path": output_path
+        }
+    else:
+        return {
+            "success": False,
+            "error": f"写入Excel文件失败: {output_path}"
+        }
+
+
+def update_excel_file(excel_path: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    更新Excel文件的主函数
+    
+    Args:
+        excel_path: 现有Excel文件路径
+        data: 要更新的数据
+    
+    Returns:
+        包含success和message的字典
+    """
+    parser = ExcelParser()
+    success = parser.update_excel(excel_path, data)
+    
+    if success:
+        return {
+            "success": True,
+            "message": f"Excel文件已成功更新: {excel_path}",
+            "file_path": excel_path
+        }
+    else:
+        return {
+            "success": False,
+            "error": f"更新Excel文件失败: {excel_path}"
+        }
+
+
 def main(input_data: Dict[str, Any] = None) -> Dict[str, Any]:
     """SKILL 入口点"""
     if input_data is None:
         input_data = {}
-    excel_path = input_data.get('file_path', '')
-    if not excel_path:
-        return {"success": False, "error": "Excel file path is required"}
-    return process_excel(excel_path)
+    
+    # 确定操作类型
+    action = input_data.get('action', 'read').lower()
+    
+    if action == 'read':
+        # 读取Excel文件
+        # 支持多种参数名称，提高兼容性
+        excel_path = input_data.get('file_path', '') or input_data.get('file', '')
+        if not excel_path:
+            return {"success": False, "error": "Excel file path is required"}
+        
+        try:
+            result = process_excel(excel_path)
+            return {"success": True, "result": result}
+        except Exception as e:
+            return {"success": False, "error": f"Excel processing failed: {str(e)}"}
+    
+    elif action == 'write':
+        # 写入Excel文件
+        output_path = input_data.get('output_path', '') or input_data.get('file_path', '') or input_data.get('file', '')
+        data = input_data.get('data', {})
+        
+        if not output_path:
+            return {"success": False, "error": "Output file path is required"}
+        
+        if not data.get('sheets'):
+            return {"success": False, "error": "Excel data is required"}
+        
+        try:
+            result = write_excel_file(output_path, data)
+            if result['success']:
+                return {"success": True, "result": result}
+            else:
+                return {"success": False, "error": result.get('error', 'Write failed')}
+        except Exception as e:
+            return {"success": False, "error": f"Excel write failed: {str(e)}"}
+    
+    elif action == 'update':
+        # 更新Excel文件
+        excel_path = input_data.get('file_path', '') or input_data.get('file', '')
+        data = input_data.get('data', {})
+        
+        if not excel_path:
+            return {"success": False, "error": "Excel file path is required"}
+        
+        if not data.get('sheets'):
+            return {"success": False, "error": "Excel data is required"}
+        
+        try:
+            result = update_excel_file(excel_path, data)
+            if result['success']:
+                return {"success": True, "result": result}
+            else:
+                return {"success": False, "error": result.get('error', 'Update failed')}
+        except Exception as e:
+            return {"success": False, "error": f"Excel update failed: {str(e)}"}
+    
+    else:
+        return {"success": False, "error": f"Invalid action: {action}. Supported actions: read, write, update"}
 
 
 if __name__ == "__main__":
     # 测试代码
     if len(sys.argv) > 1:
-        excel_path = sys.argv[1]
+        action = sys.argv[1]
+        
+        if action == 'read':
+            # 测试读取Excel文件
+            if len(sys.argv) > 2:
+                excel_path = sys.argv[2]
+            else:
+                print("使用方法: python excel_parser.py read <excel_file_path>")
+                sys.exit(1)
+            
+            if not os.path.exists(excel_path):
+                print(f"文件不存在: {excel_path}")
+                sys.exit(1)
+            
+            try:
+                result = process_excel(excel_path)
+                print(f"Excel解析完成，共 {result['sheet_count']} 个工作表")
+                print(f"总单元格数: {result['total_cells']}")
+                print(f"使用引擎: {result['engine']}")
+                print("\n解析结果:")
+                print(result['text'])
+            except Exception as e:
+                print(f"处理失败: {e}")
+                sys.exit(1)
+        
+        elif action == 'write':
+            # 测试写入Excel文件
+            if len(sys.argv) > 2:
+                output_path = sys.argv[2]
+            else:
+                print("使用方法: python excel_parser.py write <output_file_path>")
+                sys.exit(1)
+            
+            try:
+                test_data = {
+                    "sheets": [
+                        {
+                            "name": "测试工作表",
+                            "rows": [
+                                ["姓名", "年龄", "城市"],
+                                ["张三", 25, "北京"],
+                                ["李四", 30, "上海"],
+                                ["王五", 35, "广州"]
+                            ],
+                            "merged_cells": [
+                                {
+                                    "start_row": 0,
+                                    "end_row": 0,
+                                    "start_col": 0,
+                                    "end_col": 2
+                                }
+                            ]
+                        }
+                    ]
+                }
+                
+                result = write_excel_file(output_path, test_data)
+                if result['success']:
+                    print(f"Excel文件写入成功: {result['file_path']}")
+                else:
+                    print(f"Excel文件写入失败: {result['error']}")
+            except Exception as e:
+                print(f"写入失败: {e}")
+                sys.exit(1)
+        
+        elif action == 'update':
+            # 测试更新Excel文件
+            if len(sys.argv) > 3:
+                excel_path = sys.argv[2]
+                output_path = sys.argv[3]
+            else:
+                print("使用方法: python excel_parser.py update <input_file_path> <output_file_path>")
+                sys.exit(1)
+            
+            if not os.path.exists(excel_path):
+                print(f"文件不存在: {excel_path}")
+                sys.exit(1)
+            
+            try:
+                # 先读取文件
+                parser = ExcelParser()
+                excel_data = parser.parse_excel(excel_path)
+                
+                # 修改数据
+                if excel_data['sheets']:
+                    # 在第一个工作表中添加一行
+                    excel_data['sheets'][0]['rows'].append(["赵六", 40, "深圳"])
+                
+                # 写入到新文件
+                result = write_excel_file(output_path, excel_data)
+                if result['success']:
+                    print(f"Excel文件更新成功: {result['file_path']}")
+                else:
+                    print(f"Excel文件更新失败: {result['error']}")
+            except Exception as e:
+                print(f"更新失败: {e}")
+                sys.exit(1)
+        
+        else:
+            print("支持的操作: read, write, update")
+            sys.exit(1)
     else:
-        print("使用方法: python excel_parser.py <excel_file_path>")
-        sys.exit(1)
-    
-    if not os.path.exists(excel_path):
-        print(f"文件不存在: {excel_path}")
-        sys.exit(1)
-    
-    try:
-        result = process_excel(excel_path)
-        print(f"Excel解析完成，共 {result['sheet_count']} 个工作表")
-        print(f"总单元格数: {result['total_cells']}")
-        print(f"使用引擎: {result['engine']}")
-        print("\n解析结果:")
-        print(result['text'])
-    except Exception as e:
-        print(f"处理失败: {e}")
+        print("使用方法:")
+        print("  读取Excel: python excel_parser.py read <excel_file_path>")
+        print("  写入Excel: python excel_parser.py write <output_file_path>")
+        print("  更新Excel: python excel_parser.py update <input_file_path> <output_file_path>")
         sys.exit(1)
