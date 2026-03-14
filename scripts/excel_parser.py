@@ -151,76 +151,134 @@ class ExcelParser:
                 result["sheets"].append(sheet_data)
             
         except Exception as e:
-            # 如果python-calamine失败，尝试使用xlrd和openpyxl
-            print(f"python-calamine解析失败，尝试使用xlrd/openpyxl: {e}")
+            # 如果python-calamine失败，尝试使用xlwings
+            print(f"python-calamine解析失败，尝试使用xlwings: {e}")
             result = self._parse_with_fallback(excel_path)
         
         return result
     
     def _parse_with_fallback(self, excel_path: str) -> Dict[str, Any]:
         """
-        使用xlrd和openpyxl作为备选解析方案
+        使用xlwings作为备选解析方案
         """
         result = {
             "sheets": [],
             "sheet_count": 0,
             "total_cells": 0,
-            "engine": "xlrd/openpyxl"
+            "engine": "xlwings"
         }
         
         try:
-            _, file_ext = os.path.splitext(excel_path)
+            import xlwings as xw
             
-            if file_ext.lower() == '.xls':
-                # 使用xlrd处理旧版Excel文件
+            # 使用不可见模式打开Excel
+            app = xw.App(visible=False)
+            try:
+                workbook = app.books.open(excel_path)
+                
+                # 获取所有工作表
+                sheet_names = [sheet.name for sheet in workbook.sheets]
+                result["sheet_count"] = len(sheet_names)
+                
+                # 解析每个工作表
+                for sheet in workbook.sheets:
+                    sheet_data = {
+                        "name": sheet.name,
+                        "rows": [],
+                        "row_count": 0,
+                        "column_count": 0
+                    }
+                    
+                    # 获取工作表数据
+                    rows = []
+                    
+                    # 获取已使用的范围
+                    used_range = sheet.used_range
+                    if used_range:
+                        # 获取行数和列数
+                        row_count = used_range.rows.count
+                        col_count = used_range.columns.count
+                        
+                        # 读取所有数据
+                        for row_idx in range(row_count):
+                            row_data = []
+                            for col_idx in range(col_count):
+                                cell = sheet.cells(row_idx + 1, col_idx + 1)
+                                value = cell.value
+                                
+                                # 转换单元格值
+                                if value is None:
+                                    row_data.append("")
+                                elif isinstance(value, str):
+                                    row_data.append(value.strip())
+                                else:
+                                    row_data.append(str(value))
+                                rows.append(row_data)
+                    
+                    # 计算行数和列数
+                    if rows:
+                        sheet_data["rows"] = rows
+                        sheet_data["row_count"] = len(rows)
+                        sheet_data["column_count"] = len(rows[0]) if rows[0] else 0
+                        result["total_cells"] += sheet_data["row_count"] * sheet_data["column_count"]
+                    
+                    result["sheets"].append(sheet_data)
+                
+                # 关闭工作簿
+                workbook.close()
+            finally:
+                # 退出Excel应用
+                app.quit()
+            
+        except ImportError:
+            print("xlwings依赖未安装，正在尝试自动安装...")
+            if install_dependency("xlwings"):
+                # 重新导入并处理
+                import xlwings as xw
+                
+                # 使用不可见模式打开Excel
+                app = xw.App(visible=False)
                 try:
-                    import xlrd
-                    workbook = xlrd.open_workbook(excel_path)
+                    workbook = app.books.open(excel_path)
                     
                     # 获取所有工作表
-                    sheet_names = workbook.sheet_names()
+                    sheet_names = [sheet.name for sheet in workbook.sheets]
                     result["sheet_count"] = len(sheet_names)
                     
                     # 解析每个工作表
-                    for sheet_name in sheet_names:
+                    for sheet in workbook.sheets:
                         sheet_data = {
-                            "name": sheet_name,
+                            "name": sheet.name,
                             "rows": [],
                             "row_count": 0,
-                            "column_count": 0,
-                            "merged_cells": []
+                            "column_count": 0
                         }
                         
                         # 获取工作表数据
-                        sheet = workbook.sheet_by_name(sheet_name)
                         rows = []
                         
-                        # 处理合并单元格
-                        merged_cells = []
-                        if hasattr(sheet, 'merged_cells'):
-                            for crange in sheet.merged_cells:
-                                rlo, rhi, clo, chi = crange
-                                merged_cells.append({
-                                    "start_row": rlo,
-                                    "end_row": rhi - 1,
-                                    "start_col": clo,
-                                    "end_col": chi - 1
-                                })
-                        sheet_data["merged_cells"] = merged_cells
-                        
-                        for row_idx in range(sheet.nrows):
-                            row = sheet.row_values(row_idx)
-                            # 处理行数据
-                            row_data = []
-                            for cell in row:
-                                # 转换单元格值
-                                if cell is None:
-                                    row_data.append("")
-                                elif isinstance(cell, str):
-                                    row_data.append(cell.strip())
-                                else:
-                                    row_data.append(str(cell))
-                            rows.append(row_data)
+                        # 获取已使用的范围
+                        used_range = sheet.used_range
+                        if used_range:
+                            # 获取行数和列数
+                            row_count = used_range.rows.count
+                            col_count = used_range.columns.count
+                            
+                            # 读取所有数据
+                            for row_idx in range(row_count):
+                                row_data = []
+                                for col_idx in range(col_count):
+                                    cell = sheet.cells(row_idx + 1, col_idx + 1)
+                                    value = cell.value
+                                    
+                                    # 转换单元格值
+                                    if value is None:
+                                        row_data.append("")
+                                    elif isinstance(value, str):
+                                        row_data.append(value.strip())
+                                    else:
+                                        row_data.append(str(value))
+                                    rows.append(row_data)
                         
                         # 计算行数和列数
                         if rows:
@@ -232,196 +290,12 @@ class ExcelParser:
                         result["sheets"].append(sheet_data)
                     
                     # 关闭工作簿
-                    workbook.release_resources()
-                    
-                except ImportError:
-                    print("xlrd依赖未安装，正在尝试自动安装...")
-                    if install_dependency("xlrd"):
-                        # 重新导入并处理
-                        import xlrd
-                        workbook = xlrd.open_workbook(excel_path)
-                        
-                        # 获取所有工作表
-                        sheet_names = workbook.sheet_names()
-                        result["sheet_count"] = len(sheet_names)
-                        
-                        # 解析每个工作表
-                        for sheet_name in sheet_names:
-                            sheet_data = {
-                                "name": sheet_name,
-                                "rows": [],
-                                "row_count": 0,
-                                "column_count": 0,
-                                "merged_cells": []
-                            }
-                            
-                            # 获取工作表数据
-                            sheet = workbook.sheet_by_name(sheet_name)
-                            rows = []
-                            
-                            # 处理合并单元格
-                            merged_cells = []
-                            if hasattr(sheet, 'merged_cells'):
-                                for crange in sheet.merged_cells:
-                                    rlo, rhi, clo, chi = crange
-                                    merged_cells.append({
-                                        "start_row": rlo,
-                                        "end_row": rhi - 1,
-                                        "start_col": clo,
-                                        "end_col": chi - 1
-                                    })
-                            sheet_data["merged_cells"] = merged_cells
-                            
-                            for row_idx in range(sheet.nrows):
-                                row = sheet.row_values(row_idx)
-                                # 处理行数据
-                                row_data = []
-                                for cell in row:
-                                    # 转换单元格值
-                                    if cell is None:
-                                        row_data.append("")
-                                    elif isinstance(cell, str):
-                                        row_data.append(cell.strip())
-                                    else:
-                                        row_data.append(str(cell))
-                                rows.append(row_data)
-                            
-                            # 计算行数和列数
-                            if rows:
-                                sheet_data["rows"] = rows
-                                sheet_data["row_count"] = len(rows)
-                                sheet_data["column_count"] = len(rows[0]) if rows[0] else 0
-                                result["total_cells"] += sheet_data["row_count"] * sheet_data["column_count"]
-                            
-                            result["sheets"].append(sheet_data)
-                        
-                        # 关闭工作簿
-                        workbook.release_resources()
-                    else:
-                        raise Exception("xlrd依赖安装失败，请手动安装: pip install xlrd")
-            
+                    workbook.close()
+                finally:
+                    # 退出Excel应用
+                    app.quit()
             else:
-                # 使用openpyxl处理新版Excel文件
-                try:
-                    from openpyxl import load_workbook
-                    wb = load_workbook(excel_path, data_only=True)
-                    
-                    # 获取所有工作表
-                    sheet_names = wb.sheetnames
-                    result["sheet_count"] = len(sheet_names)
-                    
-                    # 解析每个工作表
-                    for sheet_name in sheet_names:
-                        sheet_data = {
-                            "name": sheet_name,
-                            "rows": [],
-                            "row_count": 0,
-                            "column_count": 0,
-                            "merged_cells": []
-                        }
-                        
-                        # 获取工作表数据
-                        ws = wb[sheet_name]
-                        rows = []
-                        
-                        # 处理合并单元格
-                        merged_cells = []
-                        for merged_cell in ws.merged_cells.ranges:
-                            merged_cells.append({
-                                "start_row": merged_cell.min_row - 1,  # 转换为0索引
-                                "end_row": merged_cell.max_row - 1,
-                                "start_col": merged_cell.min_col - 1,
-                                "end_col": merged_cell.max_col - 1
-                            })
-                        sheet_data["merged_cells"] = merged_cells
-                        
-                        for row in ws.iter_rows(values_only=True):
-                            # 处理行数据
-                            row_data = []
-                            for cell in row:
-                                # 转换单元格值
-                                if cell is None:
-                                    row_data.append("")
-                                elif isinstance(cell, str):
-                                    row_data.append(cell.strip())
-                                else:
-                                    row_data.append(str(cell))
-                            rows.append(row_data)
-                        
-                        # 计算行数和列数
-                        if rows:
-                            sheet_data["rows"] = rows
-                            sheet_data["row_count"] = len(rows)
-                            sheet_data["column_count"] = len(rows[0]) if rows[0] else 0
-                            result["total_cells"] += sheet_data["row_count"] * sheet_data["column_count"]
-                        
-                        result["sheets"].append(sheet_data)
-                    
-                    # 关闭工作簿
-                    wb.close()
-                    
-                except ImportError:
-                    print("openpyxl依赖未安装，正在尝试自动安装...")
-                    if install_dependency("openpyxl"):
-                        # 重新导入并处理
-                        from openpyxl import load_workbook
-                        wb = load_workbook(excel_path, data_only=True)
-                        
-                        # 获取所有工作表
-                        sheet_names = wb.sheetnames
-                        result["sheet_count"] = len(sheet_names)
-                        
-                        # 解析每个工作表
-                        for sheet_name in sheet_names:
-                            sheet_data = {
-                                "name": sheet_name,
-                                "rows": [],
-                                "row_count": 0,
-                                "column_count": 0,
-                                "merged_cells": []
-                            }
-                            
-                            # 获取工作表数据
-                            ws = wb[sheet_name]
-                            rows = []
-                            
-                            # 处理合并单元格
-                            merged_cells = []
-                            for merged_cell in ws.merged_cells.ranges:
-                                merged_cells.append({
-                                    "start_row": merged_cell.min_row - 1,  # 转换为0索引
-                                    "end_row": merged_cell.max_row - 1,
-                                    "start_col": merged_cell.min_col - 1,
-                                    "end_col": merged_cell.max_col - 1
-                                })
-                            sheet_data["merged_cells"] = merged_cells
-                            
-                            for row in ws.iter_rows(values_only=True):
-                                # 处理行数据
-                                row_data = []
-                                for cell in row:
-                                    # 转换单元格值
-                                    if cell is None:
-                                        row_data.append("")
-                                    elif isinstance(cell, str):
-                                        row_data.append(cell.strip())
-                                    else:
-                                        row_data.append(str(cell))
-                                rows.append(row_data)
-                            
-                            # 计算行数和列数
-                            if rows:
-                                sheet_data["rows"] = rows
-                                sheet_data["row_count"] = len(rows)
-                                sheet_data["column_count"] = len(rows[0]) if rows[0] else 0
-                                result["total_cells"] += sheet_data["row_count"] * sheet_data["column_count"]
-                            
-                            result["sheets"].append(sheet_data)
-                        
-                        # 关闭工作簿
-                        wb.close()
-                    else:
-                        raise Exception("openpyxl依赖安装失败，请手动安装: pip install openpyxl")
+                raise Exception("xlwings依赖安装失败，请手动安装: pip install xlwings")
         
         except Exception as e:
             raise Exception(f"Excel解析失败: {str(e)}")
@@ -503,56 +377,69 @@ class ExcelParser:
             是否写入成功
         """
         try:
-            from openpyxl import Workbook
-            from openpyxl.utils import get_column_letter
+            import xlwings as xw
             
-            # 创建工作簿
-            wb = Workbook()
-            
-            # 获取默认工作表
-            default_sheet = wb.active
-            
-            # 处理数据
-            sheets_data = data.get('sheets', [])
-            
-            if not sheets_data:
-                # 如果没有提供数据，创建一个默认工作表
-                default_sheet.title = "Sheet1"
-            else:
-                # 删除默认工作表
-                wb.remove(default_sheet)
+            # 使用不可见模式打开Excel
+            app = xw.App(visible=False)
+            try:
+                # 创建新工作簿
+                workbook = app.books.add()
                 
-                # 创建新工作表
-                for sheet_data in sheets_data:
-                    sheet_name = sheet_data.get('name', 'Sheet')
-                    rows = sheet_data.get('rows', [])
-                    merged_cells = sheet_data.get('merged_cells', [])
+                # 处理数据
+                sheets_data = data.get('sheets', [])
+                
+                if not sheets_data:
+                    # 如果没有提供数据，使用默认工作表
+                    workbook.sheets[0].name = "Sheet1"
+                else:
+                    # 删除默认工作表
+                    if len(workbook.sheets) > 1:
+                        workbook.sheets[0].delete()
                     
-                    # 创建工作表
-                    ws = wb.create_sheet(title=sheet_name)
-                    
-                    # 写入数据
-                    for row_idx, row in enumerate(rows, 1):  # 行号从1开始
-                        for col_idx, cell_value in enumerate(row, 1):  # 列号从1开始
-                            ws.cell(row=row_idx, column=col_idx, value=cell_value)
-                    
-                    # 处理合并单元格
-                    for merged_cell in merged_cells:
-                        start_row = merged_cell.get('start_row', 0) + 1  # 转换为1索引
-                        end_row = merged_cell.get('end_row', 0) + 1
-                        start_col = merged_cell.get('start_col', 0) + 1
-                        end_col = merged_cell.get('end_col', 0) + 1
+                    # 创建新工作表
+                    for sheet_data in sheets_data:
+                        sheet_name = sheet_data.get('name', 'Sheet')
+                        rows = sheet_data.get('rows', [])
+                        merged_cells = sheet_data.get('merged_cells', [])
                         
-                        if start_row <= end_row and start_col <= end_col:
-                            start_cell = f"{get_column_letter(start_col)}{start_row}"
-                            end_cell = f"{get_column_letter(end_col)}{end_row}"
-                            ws.merge_cells(f"{start_cell}:{end_cell}")
-            
-            # 保存文件
-            wb.save(output_path)
-            wb.close()
-            
-            return True
+                        # 检查工作表是否存在
+                        sheet = None
+                        for existing_sheet in workbook.sheets:
+                            if existing_sheet.name == sheet_name:
+                                sheet = existing_sheet
+                                break
+                        
+                        if not sheet:
+                            # 创建新工作表
+                            sheet = workbook.sheets.add(after=workbook.sheets[-1])
+                            sheet.name = sheet_name
+                        
+                        # 写入数据
+                        for row_idx, row in enumerate(rows):
+                            for col_idx, cell_value in enumerate(row):
+                                sheet.range((row_idx + 1, col_idx + 1)).value = cell_value
+                        
+                        # 处理合并单元格
+                        for merged_cell in merged_cells:
+                            start_row = merged_cell.get('start_row', 0) + 1
+                            end_row = merged_cell.get('end_row', 0) + 1
+                            start_col = merged_cell.get('start_col', 0) + 1
+                            end_col = merged_cell.get('end_col', 0) + 1
+                            
+                            if start_row <= end_row and start_col <= end_col:
+                                start_cell = (start_row, start_col)
+                                end_cell = (end_row, end_col)
+                                sheet.range(start_cell, end_cell).api.merge()
+                
+                # 保存文件
+                workbook.save(output_path)
+                workbook.close()
+                
+                return True
+                
+            finally:
+                # 退出Excel应用
+                app.quit()
             
         except Exception as e:
             print(f"写入Excel文件失败: {e}")
@@ -572,53 +459,64 @@ class ExcelParser:
             是否更新成功
         """
         try:
-            from openpyxl import load_workbook
-            from openpyxl.utils import get_column_letter
+            import xlwings as xw
             
-            # 加载现有工作簿
-            wb = load_workbook(excel_path)
-            
-            # 处理数据
-            sheets_data = data.get('sheets', [])
-            
-            for sheet_data in sheets_data:
-                sheet_name = sheet_data.get('name')
-                rows = sheet_data.get('rows', [])
-                merged_cells = sheet_data.get('merged_cells', [])
+            # 使用不可见模式打开Excel
+            app = xw.App(visible=False)
+            try:
+                # 打开现有工作簿
+                workbook = app.books.open(excel_path)
                 
-                if sheet_name:
-                    # 检查工作表是否存在
-                    if sheet_name in wb.sheetnames:
-                        ws = wb[sheet_name]
-                    else:
-                        # 创建新工作表
-                        ws = wb.create_sheet(title=sheet_name)
+                # 处理数据
+                sheets_data = data.get('sheets', [])
+                
+                for sheet_data in sheets_data:
+                    sheet_name = sheet_data.get('name')
+                    rows = sheet_data.get('rows', [])
+                    merged_cells = sheet_data.get('merged_cells', [])
                     
-                    # 清空现有数据（可选）
-                    # ws.delete_rows(1, ws.max_row)
-                    
-                    # 写入数据
-                    for row_idx, row in enumerate(rows, 1):  # 行号从1开始
-                        for col_idx, cell_value in enumerate(row, 1):  # 列号从1开始
-                            ws.cell(row=row_idx, column=col_idx, value=cell_value)
-                    
-                    # 处理合并单元格
-                    for merged_cell in merged_cells:
-                        start_row = merged_cell.get('start_row', 0) + 1  # 转换为1索引
-                        end_row = merged_cell.get('end_row', 0) + 1
-                        start_col = merged_cell.get('start_col', 0) + 1
-                        end_col = merged_cell.get('end_col', 0) + 1
+                    if sheet_name:
+                        # 检查工作表是否存在
+                        sheet = None
+                        for existing_sheet in workbook.sheets:
+                            if existing_sheet.name == sheet_name:
+                                sheet = existing_sheet
+                                break
                         
-                        if start_row <= end_row and start_col <= end_col:
-                            start_cell = f"{get_column_letter(start_col)}{start_row}"
-                            end_cell = f"{get_column_letter(end_col)}{end_row}"
-                            ws.merge_cells(f"{start_cell}:{end_cell}")
-            
-            # 保存文件
-            wb.save(excel_path)
-            wb.close()
-            
-            return True
+                        if not sheet:
+                            # 创建新工作表
+                            sheet = workbook.sheets.add(after=workbook.sheets[-1])
+                            sheet.name = sheet_name
+                        
+                        # 清空现有数据（可选）
+                        # sheet.clear()
+                        
+                        # 写入数据
+                        for row_idx, row in enumerate(rows):
+                            for col_idx, cell_value in enumerate(row):
+                                sheet.range((row_idx + 1, col_idx + 1)).value = cell_value
+                        
+                        # 处理合并单元格
+                        for merged_cell in merged_cells:
+                            start_row = merged_cell.get('start_row', 0) + 1
+                            end_row = merged_cell.get('end_row', 0) + 1
+                            start_col = merged_cell.get('start_col', 0) + 1
+                            end_col = merged_cell.get('end_col', 0) + 1
+                            
+                            if start_row <= end_row and start_col <= end_col:
+                                start_cell = (start_row, start_col)
+                                end_cell = (end_row, end_col)
+                                sheet.range(start_cell, end_cell).api.merge()
+                
+                # 保存文件
+                workbook.save()
+                workbook.close()
+                
+                return True
+                
+            finally:
+                # 退出Excel应用
+                app.quit()
             
         except Exception as e:
             print(f"更新Excel文件失败: {e}")

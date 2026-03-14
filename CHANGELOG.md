@@ -28,6 +28,11 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 将备选引擎从 xlrd 替换为 xlwings，提供更好的兼容性
+- 移除 openpyxl 依赖，统一使用 xlwings 作为备选引擎
+
 ### 计划
 
 - [ ] 支持更多Excel格式

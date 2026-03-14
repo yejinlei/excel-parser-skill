@@ -1,17 +1,6 @@
 ---
 name: excel-parser
 description: 支持多种Excel格式的内容提取和写入技能，使用calamine库处理.xls、.xlsx、.xlsm等格式。当用户需要解析Excel文件、提取表格数据、将Excel转换为文本格式、分析Excel内容、批量处理Excel文件、创建新Excel文件或更新现有Excel文件时，务必使用此技能。适用于数据提取、报表分析、内容审核、数据导出等场景。
-tags:
-  - excel
-  - spreadsheet
-  - data-extraction
-  - data-writing
-  - calamine
-  - xls
-  - xlsx
-  - xlsm
-  - openpyxl
-  - xlrd
 ---
 
 # Excel Parser Skill
@@ -22,7 +11,7 @@ Excel Parser技能用于从Excel文件中提取内容和写入内容，支持多
 
 - Python 3.7+
 - 依赖: `python-dotenv`, `python-calamine`
-- 备选依赖: `xlrd` (用于.xls文件), `openpyxl` (用于.xlsx文件)
+- 备选依赖: `xlwings` (用于所有Excel格式)
 
 ## 使用方法
 

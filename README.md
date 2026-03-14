@@ -10,7 +10,7 @@ Excel内容解析技能，使用 [python-calamine](https://github.com/dimastbk/p
 
 - 🚀 **高性能**: 基于Rust的python-calamine库，解析速度极快
 - 📊 **多格式支持**: 支持 .xls、.xlsx、.xlsm、.xltx、.xltm 格式
-- 🔄 **自动降级**: 当python-calamine失败时，自动使用xlrd/openpyxl
+- 🔄 **自动降级**: 当python-calamine失败时，自动使用xlwings
 - 📦 **自动安装**: 缺少依赖时自动尝试安装
 - 📝 **结构化输出**: 提供完整的工作表结构和文本格式结果
 - 🌐 **跨平台**: 支持Windows、Linux、macOS
@@ -145,7 +145,7 @@ pip install excel-parser-skill
 
 A: 检查文件是否损坏，或尝试使用备用引擎：
 ```python
-# 会自动降级到xlrd/openpyxl
+# 会自动降级到xlwings
 result = parser.parse_excel('file.xls')
 ```
 
@@ -170,8 +170,7 @@ A: 支持Python 3.7及以上版本。
 ## 🙏 致谢
 
 - [python-calamine](https://github.com/dimastbk/python-calamine) - 高性能Excel解析库
-- [xlrd](https://github.com/python-excel/xlrd) - 旧版Excel支持
-- [openpyxl](https://openpyxl.readthedocs.io/) - 新版Excel支持
+- [xlwings](https://www.xlwings.org/) - Excel文件读写支持
 
 ## 📞 联系方式
 
